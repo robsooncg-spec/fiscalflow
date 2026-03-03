@@ -415,7 +415,7 @@ def parse_nfe(xml_bytes):
 # ─────────────────────────────────────────
 #  CÁLCULO ICMS-ST
 # ─────────────────────────────────────────
-def calcular_st(df, ncm_st_set, mva_map, aliquota_interna):
+def calcular_st(df, ncm_st_set, mva_agco, mva_outros, aliquota_interna):
     # Garante que todas as colunas numéricas existem, criando com 0 se ausentes
     for c in ['vProd', 'icms_pICMS', 'icms_vICMS', 'ipi_vIPI']:
         if c not in df.columns:
@@ -430,7 +430,20 @@ def calcular_st(df, ncm_st_set, mva_map, aliquota_interna):
     df['SITUAÇÃO ST'] = df['ncm_str'].apply(lambda x: 'COM ST' if x in ncm_st_set else 'NORMAL')
 
     df['icms_pICMS_int'] = df['icms_pICMS'].apply(lambda x: int(float(x)) if float(x) > 0 else 0)
-    df['MVA'] = df['icms_pICMS_int'].map(mva_map)
+
+    # MVA por fornecedor: AGCO ou Outros
+    def buscar_mva(row):
+        emit = str(row.get('emit_nome', '')).strip().upper()
+        aliq = row['icms_pICMS_int']
+        if emit.startswith('AGCO DO BRASIL'):
+            return mva_agco.get(aliq, None)
+        else:
+            return mva_outros.get(aliq, None)
+
+    df['FORNECEDOR'] = df['emit_nome'].apply(
+        lambda x: 'AGCO' if str(x).strip().upper().startswith('AGCO DO BRASIL') else 'OUTROS'
+    )
+    df['MVA'] = df.apply(buscar_mva, axis=1)
 
     mask = df['SITUAÇÃO ST'] == 'COM ST'
     df['VALOR TOTAL']      = None
@@ -471,7 +484,7 @@ def gerar_excel(df):
         ('ipi_cst','IPI CST'), ('ipi_vBC','IPI BC'), ('ipi_pIPI','IPI %'), ('ipi_vIPI','IPI Valor'),
         ('pis_cst','PIS CST'), ('pis_vBC','PIS BC'), ('pis_pPIS','PIS %'), ('pis_vPIS','PIS Valor'),
         ('cofins_cst','COFINS CST'), ('cofins_vBC','COFINS BC'), ('cofins_pCOFINS','COFINS %'), ('cofins_vCOFINS','COFINS Valor'),
-        ('SITUAÇÃO ST','SITUAÇÃO ST'), ('MVA','MVA'),
+        ('FORNECEDOR','FORNECEDOR'), ('SITUAÇÃO ST','SITUAÇÃO ST'), ('MVA','MVA'),
         ('VALOR TOTAL','VALOR TOTAL'), ('BASE ICMS ST','BASE ICMS ST'), ('VALOR DO ICMS ST','VALOR DO ICMS ST'),
     ]
 
@@ -480,7 +493,7 @@ def gerar_excel(df):
     h_fill_st = PatternFill('solid', start_color='833C00')
     d_font    = Font(name='Arial', size=9)
     center    = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    st_keys   = {'SITUAÇÃO ST','MVA','VALOR TOTAL','BASE ICMS ST','VALOR DO ICMS ST'}
+    st_keys   = {'FORNECEDOR','SITUAÇÃO ST','MVA','VALOR TOTAL','BASE ICMS ST','VALOR DO ICMS ST'}
     num_keys  = {'qtd','vUnCom','vProd','vProd_total','vIPI_total','vICMS_total','vNF_total',
                  'icms_vBC','icms_pICMS','icms_vICMS','ipi_vBC','ipi_pIPI','ipi_vIPI',
                  'pis_vBC','pis_pPIS','pis_vPIS','cofins_vBC','cofins_pCOFINS','cofins_vCOFINS',
@@ -650,9 +663,11 @@ if pagina == "📤 Processar XMLs":
 
             # Carrega tabelas de referência
             ncm_st_df  = pd.read_excel(ncm_file)
-            mva_df     = pd.read_excel(mva_file)
             ncm_st_set = set(ncm_st_df['NCM'].astype(str).str.strip().tolist())
-            mva_map    = dict(zip(mva_df['Alíquota Interestadual'].astype(int), mva_df['MVA']))
+            mva_agco_df   = pd.read_excel(mva_file, sheet_name='AGCO')
+            mva_outros_df = pd.read_excel(mva_file, sheet_name='OUTROS')
+            mva_agco   = dict(zip(mva_agco_df['Alíquota Interestadual'].astype(int),   mva_agco_df['MVA']))
+            mva_outros = dict(zip(mva_outros_df['Alíquota Interestadual'].astype(int), mva_outros_df['MVA']))
 
             # Processa
             progress = st.progress(0, text="Iniciando...")
@@ -672,7 +687,7 @@ if pagina == "📤 Processar XMLs":
             time.sleep(0.3)
 
             df = pd.DataFrame(all_rows)
-            df = calcular_st(df, ncm_st_set, mva_map, st.session_state.aliquota_st)
+            df = calcular_st(df, ncm_st_set, mva_agco, mva_outros, st.session_state.aliquota_st)
 
             progress.empty()
 
