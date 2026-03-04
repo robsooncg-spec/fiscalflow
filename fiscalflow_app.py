@@ -443,6 +443,7 @@ def calcular_st(df, ncm_st_set, mva_agco, mva_outros, aliquota_interna):
     df['FORNECEDOR'] = df['emit_nome'].apply(
         lambda x: 'AGCO' if str(x).strip().upper().startswith('AGCO DO BRASIL') else 'OUTROS'
     )
+
     df['MVA'] = df.apply(buscar_mva, axis=1)
 
     mask = df['SITUAÇÃO ST'] == 'COM ST'
@@ -541,7 +542,7 @@ def gerar_excel(df):
     ws2 = wb.create_sheet("Resumo por NF")
     h2  = ['Número NF','Série','Data Emissão','Emitente','Destinatário','UF Dest',
            'Qtd Itens','Itens COM ST','Itens NORMAL','Valor Produtos',
-           'IPI Total','ICMS Total','Valor Total NF','ICMS-ST Total']
+           'IPI Total','ICMS Total','Valor Total NF','BASE ICMS ST Total','ICMS-ST Total','Chave NF-e']
     for ci, h in enumerate(h2, 1):
         cell = ws2.cell(row=1, column=ci, value=h)
         cell.font = h_font; cell.fill = h_fill; cell.alignment = center
@@ -557,10 +558,12 @@ def gerar_excel(df):
         f   = items[0]
         fv  = lambda k: float(f.get(k, 0) or 0)
         n_st= sum(1 for i in items if i.get('SITUAÇÃO ST') == 'COM ST')
-        st_total = sum(float(i.get('VALOR DO ICMS ST') or 0) for i in items if i.get('SITUAÇÃO ST') == 'COM ST')
+        st_total   = sum(float(i.get('VALOR DO ICMS ST') or 0) for i in items if i.get('SITUAÇÃO ST') == 'COM ST')
+        base_total = sum(float(i.get('BASE ICMS ST') or 0) for i in items if i.get('SITUAÇÃO ST') == 'COM ST')
+        chave_nfe  = f.get('chave_nfe', '')
         vals = [f['num_nf'], f['serie'], f['data_emissao'], f['emit_nome'], f['dest_nome'], f['dest_uf'],
                 len(items), n_st, len(items)-n_st,
-                fv('vProd_total'), fv('vIPI_total'), fv('vICMS_total'), fv('vNF_total'), st_total]
+                fv('vProd_total'), fv('vIPI_total'), fv('vICMS_total'), fv('vNF_total'), base_total, st_total, chave_nfe]
         for ci, val in enumerate(vals, 1):
             cell = ws2.cell(row=ri2, column=ci, value=val)
             cell.font = Font(name='Arial', size=9)
